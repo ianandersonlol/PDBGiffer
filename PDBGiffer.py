@@ -1,56 +1,72 @@
 import os
 import sys
 import numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib.animation import ArtistAnimation
-plt.style.use('fivethirtyeight')
+from Bio.PDB import PDBParser
+from Bio.PDB.Polypeptide import PPBuilder
+from Bio.PDB.Structure import Structure
+from Bio.PDB.PDBExceptions import PDBConstructionException
+from Bio.PDB.PDBIO import PDBIO
+from PIL import Image, ImageDraw
+import math
+import time
+import warnings
+warnings.filterwarnings("ignore") # This is really bad programming. Don't do it. Ian is a bad programmer.
 
-def generate_gif(input_file,output_dir=None):
-    # read in the PDB file and extract the x, y, and z coordinates of the atoms
-    with open(input_file, 'r') as f:
-        lines = f.readlines()
-    x, y, z = [], [], []
-    for line in lines:
-        if line[0:4] == 'ATOM':
-            x.append(float(line[30:38]))
-            y.append(float(line[38:46]))
-            z.append(float(line[46:54]))
+def generate_gif(pdb_path, gif_path=None):
+    # Parse the PDB file
+    parser = PDBParser()
+    structure = parser.get_structure('structure', pdb_path)
+    # Build a list of polypeptides (amino acid chains)
+    ppb = PPBuilder()
+    polypeptides = ppb.build_peptides(structure)
 
-    # set up the figure and 3D axis
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
+    # Set up the image size and background color
+    size = (400, 400)
+    background = (255, 255, 255)
 
-    # create a list of angles for the gif
-    angles = np.linspace(0, 360, 36)
+    # Create an empty image
+    image = Image.new('RGB', size, background)
+    draw = ImageDraw.Draw(image)
 
-    # create an empty list to store the plots
-    plots = []
+    # Set the number of frames in the GIF
+    num_frames = 36
 
-    # loop through the angles and create a plot for each angle
-    for angle in angles:
-        # convert the angle to radians
-        angle_rad = np.deg2rad(angle)
-        # rotate the x and y coordinates by the angle
-        x_rotated = [x_i * np.cos(angle_rad) - y_i * np.sin(angle_rad) for x_i, y_i in zip(x, y)]
-        y_rotated = [x_i * np.sin(angle_rad) + y_i * np.cos(angle_rad) for x_i, y_i in zip(x, y)]
-        # create a scatter plot of the rotated coordinates
-        plot = ax.scatter(x_rotated, y_rotated, z)
-        # add the plot to the list of plots
-        plots.append([plot])
+    # Create the GIF frames
+    frames = []
+    for i in range(num_frames):
+        # Rotate the structure
+        print(rotation_matrix(i * 360 / num_frames))
+        print(i * 360 / num_frames)
+        structure = structure.rotate_about(axis=(0, 0, 1), point=(0, 0, 0), angle=i * 360 / num_frames)
 
-    # create the gif using the list of plots
-    anim = ArtistAnimation(fig, plots, interval=50, blit=True, repeat_delay=1000)
+        # Create a PDBIO object and draw the structure
+        io = PDBIO()
+        io.set_structure(structure)
+        io.save(draw, polypeptides=polypeptides)
 
-    if output_dir is not None:
-        # If an output directory is specified, create the gif in the specified directory
-        base_name = os.path.splitext(os.path.basename(input_file))[0]
-        output_file = os.path.join(output_dir, base_name + '.gif')
-        anim.save(output_file, writer='imagemagick')
-    else:
-        # If no output directory is specified, create the gif in the current working directory
-        base_name = os.path.splitext(os.path.basename(input_file))[0]
-        anim.save(base_name+'.gif', writer='imagemagick')
+        # Save the frame to the list of frames
+        frame = image.copy()
+        frames.append(frame)
+
+
+    # Save the frames as a GIF animation
+        if gif_path is not None:
+            # If an output directory is specified, create the gif in the specified directory
+            base_name = os.path.splitext(os.path.basename(pdb_path))[0]
+            output_file = os.path.join(gif_path, base_name + '.gif')
+        else:
+            # If no output directory is specified, create the gif in the current working directory
+            base_name = os.path.splitext(os.path.basename(pdb_path))[0]
+            frames[0].save(base_name+".gif", format='GIF', append_images=frames[1:], save_all=True, duration=100, loop=0)
+
+    
+def rotation_matrix(angle):
+    """Returns a rotation matrix for rotating a protein structure by a given angle."""
+    angle = math.radians(angle)
+    c = math.cos(angle)
+    s = math.sin(angle)
+    return [[c, -s, 0], [s, c, 0], [0, 0, 1]]
+
     
         
 if __name__ == '__main__':
@@ -82,4 +98,9 @@ if __name__ == '__main__':
             for file in files:
                 if file.endswith('.pdb'):
                     pdb_file = os.path.join(root, file)
+                    start_time = time.time()
                     generate_gif(pdb_file,output_path)
+                    end_time = time.time()
+                    print("Took "+str(end_time - start_time)+"s to generate a gif for "+pdb_file)
+                    
+                    
